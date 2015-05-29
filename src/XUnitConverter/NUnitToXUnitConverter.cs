@@ -6,26 +6,22 @@ using System.Collections.Generic;
 
 namespace XUnitConverter
 {
-    public sealed class MSTestToXUnitConverter : TestFrameworkToXUnitConverter
+    public sealed class NUnitToXUnitConverter : TestFrameworkToXUnitConverter
     {
         private static readonly ICollection<string> s_namespaces = new HashSet<string>(StringComparer.Ordinal)
         {
-            "N:Microsoft.VisualStudio.TestPlatform.UnitTestFramework",
-            "N:Microsoft.Bcl.Testing",
-            "N:Microsoft.VisualStudio.TestTools.UnitTesting",
-            "N:CoreFXTestLibrary"
+            "N:NUnit.Framework",
         };
 
         protected override IEnumerable<string> AttributesToRemove
         {
             get
             {
-                yield return "ContractsRequiredAttribute";
-                yield return "TestClassAttribute";
+                yield return "TestFixtureAttribute";
             }
         }
 
-        protected override string TestMethodName { get; } = "TestMethodAttribute";
+        protected override string TestMethodName { get; } = "TestAttribute";
 
         protected override ICollection<string> TestNamespaces { get; } = s_namespaces;
     }

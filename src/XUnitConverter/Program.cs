@@ -3,9 +3,6 @@
 
 using Microsoft.CodeAnalysis.MSBuild;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -34,6 +31,7 @@ namespace XUnitConverter
             var project = await workspace.OpenProjectAsync(projectPath, cancellationToken);
             var converters = new ConverterBase[]
                 {
+                    new NUnitToXUnitConverter(),
                     new MSTestToXUnitConverter(),
                     new TestAssertTrueOrFalseConverter(),
                     new AssertArgumentOrderConverter(),
