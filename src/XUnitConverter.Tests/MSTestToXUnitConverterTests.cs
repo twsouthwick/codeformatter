@@ -226,5 +226,47 @@ namespace System.Composition.UnitTests
 ";
             await Verify(text, expected);
         }
+
+        [Fact]
+        public async Task TestTriviaAboveTestClassAndMethod()
+        {
+            var text = @"
+using System;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace System.Composition.UnitTests
+{
+    // Some trivia
+    [TestClass]
+    public class MyTestClass
+    {
+        // More trivia
+        [TestMethod]
+        public void Test()
+        {
+        }
+    }
+}
+";
+
+            var expected = @"
+using System;
+using Xunit;
+
+namespace System.Composition.UnitTests
+{
+    // Some trivia
+    public class MyTestClass
+    {
+        // More trivia
+        [Fact]
+        public void Test()
+        {
+        }
+    }
+}
+";
+            await Verify(text, expected);
+        }
     }
 }

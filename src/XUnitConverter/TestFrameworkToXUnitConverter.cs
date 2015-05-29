@@ -105,7 +105,7 @@ namespace XUnitConverter
 
             return usings.WithUsings(SyntaxFactory.List(newUsings));
         }
-        
+
         private void RemoveAttributes(SyntaxNode root, SemanticModel semanticModel, TransformationTracker transformationTracker)
         {
             foreach (var attribute in AttributesToRemove)
@@ -149,7 +149,7 @@ namespace XUnitConverter
                     }
                     else
                     {
-                        transformationRoot = transformationRoot.RemoveNode(attributeListSyntax, SyntaxRemoveOptions.KeepNoTrivia);
+                        transformationRoot = transformationRoot.RemoveNode(attributeListSyntax, SyntaxRemoveOptions.KeepLeadingTrivia);
                     }
                 }
                 return transformationRoot;
