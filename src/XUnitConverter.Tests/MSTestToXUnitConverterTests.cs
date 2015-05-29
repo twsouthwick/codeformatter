@@ -188,5 +188,43 @@ namespace System.Composition.UnitTests
 ";
             await Verify(text, expected);
         }
+
+        [Fact]
+        public async Task TestInnerNamespace()
+        {
+            var text = @"
+namespace System.Composition.UnitTests
+{
+    using System;
+    using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+    [TestClass]
+    public class MyTestClass
+    {
+        [TestMethod]
+        public void Test()
+        {
+        }
+    }
+}
+";
+
+            var expected = @"
+namespace System.Composition.UnitTests
+{
+    using System;
+    using Xunit;
+
+    public class MyTestClass
+    {
+        [Fact]
+        public void Test()
+        {
+        }
+    }
+}
+";
+            await Verify(text, expected);
+        }
     }
 }

@@ -29,14 +29,18 @@ namespace XUnitConverter
                 return document.Project.Solution;
             }
 
-            var originalRoot = root;
+            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            var result = Process(semanticModel, new CompilationUnitSyntaxConverter(root as CompilationUnitSyntax));
 
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            return document.WithSyntaxRoot(result.Node).Project.Solution;
+        }
 
-            List<UsingDirectiveSyntax> newUsings = new List<UsingDirectiveSyntax>();
+        private IConverterSyntax Process(SemanticModel semanticModel, IConverterSyntax usings)
+        {
+            var newUsings = new List<UsingDirectiveSyntax>();
             bool needsChanges = false;
 
-            foreach (var usingSyntax in root.Usings)
+            foreach (var usingSyntax in usings.Usings)
             {
                 var symbolInfo = semanticModel.GetSymbolInfo(usingSyntax.Name);
                 if (symbolInfo.Symbol != null)
@@ -57,43 +61,52 @@ namespace XUnitConverter
                 }
             }
 
+            // Iterate through all members and process any namespace declarations
+            foreach (var member in usings.Members)
+            {
+                if (member.IsKind(SyntaxKind.NamespaceDeclaration))
+                {
+                    var result = Process(semanticModel, new NamespaceSyntaxConverter(member as NamespaceDeclarationSyntax));
+
+                    usings = usings.ReplaceNode(member, result.Node);
+                }
+            }
+
             if (!needsChanges)
             {
-                return document.Project.Solution;
+                return usings;
             }
 
             TransformationTracker transformationTracker = new TransformationTracker();
-            RemoveAttributes(root, semanticModel, transformationTracker);
-            ChangeTestMethodAttributesToFact(root, semanticModel, transformationTracker);
-            ChangeAssertCalls(root, semanticModel, transformationTracker);
-            root = transformationTracker.TransformRoot(root);
-
+            RemoveAttributes(usings.Node, semanticModel, transformationTracker);
+            ChangeTestMethodAttributesToFact(usings.Node, semanticModel, transformationTracker);
+            ChangeAssertCalls(usings.Node, semanticModel, transformationTracker);
+            usings = transformationTracker.TransformRoot(usings);
 
             //  Remove compiler directives before the first member of the file (e.g. an #endif after the using statements)
-            var firstMember = root.Members.FirstOrDefault();
+            var firstMember = usings.Members.FirstOrDefault();
             if (firstMember != null)
             {
                 if (firstMember.HasLeadingTrivia)
                 {
                     var newLeadingTrivia = firstMember.GetLeadingTrivia();
-                    root = root.ReplaceNode(firstMember, firstMember.WithLeadingTrivia(newLeadingTrivia));
+                    usings = usings.ReplaceNode(firstMember, firstMember.WithLeadingTrivia(newLeadingTrivia));
                 }
             }
 
-            var xUnitUsing = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Xunit")).NormalizeWhitespace();
+            //  Apply trivia from original last using statement to new last using statement
+            var lastUsing = usings.Usings.Last();
+            var xUnitUsing = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Xunit"))
+                .NormalizeWhitespace()
+                .WithTrailingTrivia(lastUsing.GetTrailingTrivia())
+                .WithLeadingTrivia(lastUsing.GetLeadingTrivia());
+
             newUsings.Add(xUnitUsing);
 
-            //  Apply trailing trivia from original last using statement to new last using statement
-            SyntaxTriviaList usingTrailingTrivia = originalRoot.Usings.Last().GetTrailingTrivia();
-            newUsings[newUsings.Count - 1] = newUsings.Last().WithTrailingTrivia(usingTrailingTrivia);
-
-            root = root.WithUsings(SyntaxFactory.List<UsingDirectiveSyntax>(newUsings));
-
-
-            return document.WithSyntaxRoot(root).Project.Solution;
+            return usings.WithUsings(SyntaxFactory.List(newUsings));
         }
-
-        private void RemoveAttributes(CompilationUnitSyntax root, SemanticModel semanticModel, TransformationTracker transformationTracker)
+        
+        private void RemoveAttributes(SyntaxNode root, SemanticModel semanticModel, TransformationTracker transformationTracker)
         {
             foreach (var attribute in AttributesToRemove)
             {
@@ -101,7 +114,7 @@ namespace XUnitConverter
             }
         }
 
-        private void RemoveTestAttributes(CompilationUnitSyntax root, SemanticModel semanticModel, TransformationTracker transformationTracker, string attributeName)
+        private void RemoveTestAttributes(SyntaxNode root, SemanticModel semanticModel, TransformationTracker transformationTracker, string attributeName)
         {
             List<AttributeSyntax> nodesToRemove = new List<AttributeSyntax>();
 
@@ -143,7 +156,7 @@ namespace XUnitConverter
             });
         }
 
-        private void ChangeTestMethodAttributesToFact(CompilationUnitSyntax root, SemanticModel semanticModel, TransformationTracker transformationTracker)
+        private void ChangeTestMethodAttributesToFact(SyntaxNode root, SemanticModel semanticModel, TransformationTracker transformationTracker)
         {
             List<AttributeSyntax> nodesToReplace = new List<AttributeSyntax>();
 
@@ -169,7 +182,7 @@ namespace XUnitConverter
             });
         }
 
-        private void ChangeAssertCalls(CompilationUnitSyntax root, SemanticModel semanticModel, TransformationTracker transformationTracker)
+        private void ChangeAssertCalls(SyntaxNode root, SemanticModel semanticModel, TransformationTracker transformationTracker)
         {
             Dictionary<string, string> assertMethodsToRename = new Dictionary<string, string>()
             {
@@ -262,11 +275,11 @@ namespace XUnitConverter
 
         private class TransformationTracker
         {
-            private Dictionary<SyntaxAnnotation, Func<CompilationUnitSyntax, IEnumerable<SyntaxNode>, Dictionary<SyntaxNode, SyntaxNode>, CompilationUnitSyntax>> _annotationToTransformation = new Dictionary<SyntaxAnnotation, Func<CompilationUnitSyntax, IEnumerable<SyntaxNode>, Dictionary<SyntaxNode, SyntaxNode>, CompilationUnitSyntax>>();
+            private Dictionary<SyntaxAnnotation, Func<IConverterSyntax, IEnumerable<SyntaxNode>, Dictionary<SyntaxNode, SyntaxNode>, IConverterSyntax>> _annotationToTransformation = new Dictionary<SyntaxAnnotation, Func<IConverterSyntax, IEnumerable<SyntaxNode>, Dictionary<SyntaxNode, SyntaxNode>, IConverterSyntax>>();
             private Dictionary<SyntaxNode, List<SyntaxAnnotation>> _nodeToAnnotations = new Dictionary<SyntaxNode, List<SyntaxAnnotation>>();
             private Dictionary<SyntaxAnnotation, SyntaxNode> _originalNodeLookup = new Dictionary<SyntaxAnnotation, SyntaxNode>();
 
-            public void AddTransformation(IEnumerable<SyntaxNode> nodesToTransform, Func<CompilationUnitSyntax, IEnumerable<SyntaxNode>, Dictionary<SyntaxNode, SyntaxNode>, CompilationUnitSyntax> transformerFunc)
+            public void AddTransformation(IEnumerable<SyntaxNode> nodesToTransform, Func<IConverterSyntax, IEnumerable<SyntaxNode>, Dictionary<SyntaxNode, SyntaxNode>, IConverterSyntax> transformerFunc)
             {
                 var annotation = new SyntaxAnnotation();
                 _annotationToTransformation[annotation] = transformerFunc;
@@ -287,9 +300,9 @@ namespace XUnitConverter
                 }
             }
 
-            public CompilationUnitSyntax TransformRoot(CompilationUnitSyntax root)
+            public IConverterSyntax TransformRoot(IConverterSyntax usings)
             {
-                root = root.ReplaceNodes(_nodeToAnnotations.Keys, (originalNode, rewrittenNode) =>
+                usings = usings.ReplaceNodes(_nodeToAnnotations.Keys, (originalNode, rewrittenNode) =>
                 {
                     var ret = rewrittenNode.WithAdditionalAnnotations(_nodeToAnnotations[originalNode]);
 
@@ -301,7 +314,7 @@ namespace XUnitConverter
                     Dictionary<SyntaxNode, SyntaxNode> originalNodeMap = new Dictionary<SyntaxNode, SyntaxNode>();
                     foreach (var originalNodeKvp in _originalNodeLookup)
                     {
-                        var annotatedNodes = root.GetAnnotatedNodes(originalNodeKvp.Key).ToList();
+                        var annotatedNodes = usings.GetAnnotatedNodes(originalNodeKvp.Key).ToList();
                         SyntaxNode annotatedNode = annotatedNodes.SingleOrDefault();
                         if (annotatedNode != null)
                         {
@@ -311,11 +324,11 @@ namespace XUnitConverter
 
                     var syntaxAnnotation = kvp.Key;
                     var transformation = kvp.Value;
-                    var nodesToTransform = root.GetAnnotatedNodes(syntaxAnnotation);
-                    root = transformation(root, nodesToTransform, originalNodeMap);
+                    var nodesToTransform = usings.GetAnnotatedNodes(syntaxAnnotation);
+                    usings = transformation(usings, nodesToTransform, originalNodeMap);
                 }
 
-                return root;
+                return usings;
             }
         }
     }
