@@ -20,26 +20,6 @@ namespace XUnitConverter
 
         protected abstract IEnumerable<string> AttributesToRemove { get; }
 
-        private static UsingDirectiveSyntax RemoveLeadingAndTrailingCompilerDirectives(UsingDirectiveSyntax usingSyntax)
-        {
-            UsingDirectiveSyntax usingDirectiveToUse = usingSyntax;
-            if (usingDirectiveToUse.HasLeadingTrivia)
-            {
-                if (usingDirectiveToUse.HasLeadingTrivia)
-                {
-                    var newLeadingTrivia = RemoveCompilerDirectives(usingDirectiveToUse.GetLeadingTrivia());
-                    usingDirectiveToUse = usingDirectiveToUse.WithLeadingTrivia(newLeadingTrivia);
-                }
-                if (usingDirectiveToUse.HasTrailingTrivia)
-                {
-                    var newTrailingTrivia = RemoveCompilerDirectives(usingDirectiveToUse.GetTrailingTrivia());
-                    usingDirectiveToUse = usingDirectiveToUse.WithTrailingTrivia(newTrailingTrivia);
-                }
-            }
-
-            return usingDirectiveToUse;
-        }
-
         protected override async Task<Solution> ProcessAsync(Document document, SyntaxNode syntaxNode, CancellationToken cancellationToken)
         {
             var root = syntaxNode as CompilationUnitSyntax;
@@ -68,12 +48,12 @@ namespace XUnitConverter
                     }
                     else
                     {
-                        newUsings.Add(RemoveLeadingAndTrailingCompilerDirectives(usingSyntax));
+                        newUsings.Add(usingSyntax);
                     }
                 }
                 else
                 {
-                    newUsings.Add(RemoveLeadingAndTrailingCompilerDirectives(usingSyntax));
+                    newUsings.Add(usingSyntax);
                 }
             }
 
@@ -95,7 +75,7 @@ namespace XUnitConverter
             {
                 if (firstMember.HasLeadingTrivia)
                 {
-                    var newLeadingTrivia = RemoveCompilerDirectives(firstMember.GetLeadingTrivia());
+                    var newLeadingTrivia = firstMember.GetLeadingTrivia();
                     root = root.ReplaceNode(firstMember, firstMember.WithLeadingTrivia(newLeadingTrivia));
                 }
             }
@@ -104,7 +84,7 @@ namespace XUnitConverter
             newUsings.Add(xUnitUsing);
 
             //  Apply trailing trivia from original last using statement to new last using statement
-            SyntaxTriviaList usingTrailingTrivia = RemoveCompilerDirectives(originalRoot.Usings.Last().GetTrailingTrivia());
+            SyntaxTriviaList usingTrailingTrivia = originalRoot.Usings.Last().GetTrailingTrivia();
             newUsings[newUsings.Count - 1] = newUsings.Last().WithTrailingTrivia(usingTrailingTrivia);
 
             root = root.WithUsings(SyntaxFactory.List<UsingDirectiveSyntax>(newUsings));
@@ -255,23 +235,6 @@ namespace XUnitConverter
                     });
                 });
             }
-        }
-
-        private static SyntaxTriviaList RemoveCompilerDirectives(SyntaxTriviaList stl)
-        {
-            foreach (var trivia in stl)
-            {
-                if (trivia.Kind() == SyntaxKind.IfDirectiveTrivia ||
-                    trivia.Kind() == SyntaxKind.DisabledTextTrivia ||
-                    trivia.Kind() == SyntaxKind.EndIfDirectiveTrivia ||
-                    trivia.Kind() == SyntaxKind.ElifDirectiveTrivia ||
-                    trivia.Kind() == SyntaxKind.ElseDirectiveTrivia)
-                {
-                    stl = stl.Remove(trivia);
-                }
-            }
-
-            return stl;
         }
 
         private bool IsTestNamespaceType(string docID, string simpleTypeName)
